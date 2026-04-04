@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Home, LogIn } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import api from '../services/api'   // ← ADD: yeh line add ki
+
 
 export default function Login() {
   const [form, setForm] = useState({ email:'', password:'' })
@@ -16,12 +18,24 @@ export default function Login() {
     setError('')
     if (!form.email || !form.password) { setError('Please fill all fields'); return }
     setLoading(true)
-    // Simulate API call — replace with real Django API later
-    await new Promise(r => setTimeout(r, 800))
-    const mockUser = { name: 'Demo User', email: form.email, role: 'buyer', token: 'mock-token-123' }
-    login(mockUser)
-    setLoading(false)
-    navigate('/')
+
+    // ← CHANGE: mock API hataya, real Django API lagaya
+    try {
+      const res = await api.post('/auth/login/', {
+        email:    form.email,
+        password: form.password,
+      })
+      login({
+        ...res.data.user,
+        token:   res.data.access,
+        refresh: res.data.refresh,
+      })
+      navigate('/')
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Invalid email or password.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
