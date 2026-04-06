@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Home, UserPlus } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import api from '../services/api'   // ← ADD
 
 export default function Register() {
   const [form, setForm] = useState({ name:'', email:'', phone:'', password:'', role:'buyer', rera:'' })
@@ -17,11 +18,34 @@ export default function Register() {
     if (!form.name || !form.email || !form.phone || !form.password) { setError('Please fill all required fields'); return }
     if (form.password.length < 6) { setError('Password must be at least 6 characters'); return }
     setLoading(true)
-    await new Promise(r => setTimeout(r, 800))
-    const mockUser = { name: form.name, email: form.email, role: form.role, token: 'mock-token-new' }
-    login(mockUser)
-    setLoading(false)
-    navigate('/')
+
+    // ← CHANGE: mock hataya, real Django API lagaya
+    try {
+      const res = await api.post('/auth/register/', {
+        name:        form.name,
+        email:       form.email,
+        phone:       form.phone,
+        password:    form.password,
+        password2:   form.password,
+        role:        form.role,
+        agency:      '',
+        rera_number: form.rera || '',
+      })
+      login({
+        ...res.data.user,
+        token:   res.data.access,
+        refresh: res.data.refresh,
+      })
+      navigate('/')
+    } catch (err) {
+      const data = err.response?.data
+      if (data?.email)    setError('Email: ' + data.email[0])
+      else if (data?.phone)    setError('Phone: ' + data.phone[0])
+      else if (data?.password) setError('Password: ' + data.password[0])
+      else setError('Registration failed. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const roles = [

@@ -1,14 +1,14 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { SlidersHorizontal, X, Grid, List, ChevronDown } from 'lucide-react'
 import PropertyCard from '../components/property/PropertyCard'
-import { PROPERTIES } from '../utils/mockData'
+import api from '../services/api'   // ← ADD
 
 const BHK_OPTS  = ['1 BHK', '2 BHK', '3 BHK', '4 BHK', '4+ BHK']
 const TYPE_OPTS  = ['Flat', 'House', 'Villa', 'Plot', 'Commercial']
 const FURN_OPTS  = ['Fully Furnished', 'Semi Furnished', 'Unfurnished']
 const SORT_OPTS  = [
-  { label: 'Newest First',      value: 'newest'    },
+  { label: 'Newest First',       value: 'newest'    },
   { label: 'Price: Low to High', value: 'price_asc' },
   { label: 'Price: High to Low', value: 'price_desc'},
   { label: 'Area: Large First',  value: 'area_desc' },
@@ -19,9 +19,15 @@ export default function SearchResults() {
   const [showFilters, setShowFilters] = useState(false)
   const [viewMode, setViewMode]       = useState('grid')
   const [sort, setSort]               = useState('newest')
+
+  // ← CHANGE: mock PROPERTIES hataya, real state lagaya
+  const [properties, setProperties] = useState([])
+  const [total, setTotal]           = useState(0)
+  const [loading, setLoading]       = useState(true)
+
   const [filters, setFilters] = useState({
-    city:       searchParams.get('city') || '',
-    type:       searchParams.get('type') || '',
+    city:       searchParams.get('city')     || '',
+    type:       searchParams.get('type')     || '',
     propType:   searchParams.get('propType') || '',
     bhk:        [],
     furnishing: [],
@@ -29,27 +35,44 @@ export default function SearchResults() {
     maxPrice:   '',
   })
 
+  // ← ADD: Backend se properties fetch karo
+  useEffect(() => {
+    const fetchProperties = async () => {
+      setLoading(true)
+      try {
+        const res = await api.get('/properties/', {
+          params: {
+            city:         filters.city       || undefined,
+            listing_type: filters.type       || undefined,
+            prop_type:    filters.propType   || undefined,
+            bhk:          filters.bhk[0]     || undefined,
+            furnishing:   filters.furnishing[0] || undefined,
+            min_price:    filters.minPrice   || undefined,
+            max_price:    filters.maxPrice   || undefined,
+            ordering:
+              sort === 'newest'     ? '-created_at' :
+              sort === 'price_asc'  ? 'price'       :
+              sort === 'price_desc' ? '-price'       :
+              sort === 'area_desc'  ? '-area'        : '-created_at',
+          }
+        })
+        setProperties(res.data.results || [])
+        setTotal(res.data.count || 0)
+      } catch (err) {
+        console.error('Error fetching properties:', err)
+        setProperties([])
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchProperties()
+  }, [filters, sort])
+
   const toggle = (key, val) =>
     setFilters(f => ({
       ...f,
       [key]: f[key].includes(val) ? f[key].filter(v => v !== val) : [...f[key], val],
     }))
-
-  const results = useMemo(() => {
-    let list = [...PROPERTIES]
-    if (filters.city)              list = list.filter(p => p.city === filters.city)
-    if (filters.type)              list = list.filter(p => p.listingType === filters.type)
-    if (filters.propType)          list = list.filter(p => p.type === filters.propType)
-    if (filters.bhk.length)        list = list.filter(p => filters.bhk.includes(p.bhk))
-    if (filters.furnishing.length) list = list.filter(p => filters.furnishing.includes(p.furnishing))
-    if (filters.minPrice)          list = list.filter(p => p.price >= Number(filters.minPrice))
-    if (filters.maxPrice)          list = list.filter(p => p.price <= Number(filters.maxPrice))
-    if (sort === 'newest')     list.sort((a,b) => new Date(b.postedAt)-new Date(a.postedAt))
-    if (sort === 'price_asc')  list.sort((a,b) => a.price - b.price)
-    if (sort === 'price_desc') list.sort((a,b) => b.price - a.price)
-    if (sort === 'area_desc')  list.sort((a,b) => b.area - a.area)
-    return list
-  }, [filters, sort])
 
   const clearFilters = () =>
     setFilters({ city:'', type:'', propType:'', bhk:[], furnishing:[], minPrice:'', maxPrice:'' })
@@ -60,10 +83,16 @@ export default function SearchResults() {
       <div className="bg-white border-b border-gray-100 sticky top-16 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-4">
           <div>
-            <span className="font-semibold text-primary-900">{results.length} Properties</span>
-            <span className="text-gray-400 text-sm ml-2">
-              {filters.city && `in ${filters.city}`} {filters.propType && `· ${filters.propType}`}
-            </span>
+            {loading ? (
+              <span className="text-gray-400 text-sm">Loading...</span>
+            ) : (
+              <>
+                <span className="font-semibold text-primary-900">{total} Properties</span>
+                <span className="text-gray-400 text-sm ml-2">
+                  {filters.city && `in ${filters.city}`} {filters.propType && `· ${filters.propType}`}
+                </span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <div className="relative hidden sm:block">
@@ -185,18 +214,38 @@ export default function SearchResults() {
 
         {/* Results Grid */}
         <div className="flex-1">
-          {results.length === 0 ? (
+          {/* Loading State */}
+          {loading && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="bg-white rounded-2xl overflow-hidden shadow-sm">
+                  <div className="skeleton h-48 w-full" />
+                  <div className="p-4 space-y-3">
+                    <div className="skeleton h-4 w-3/4 rounded" />
+                    <div className="skeleton h-3 w-1/2 rounded" />
+                    <div className="skeleton h-5 w-1/3 rounded" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!loading && properties.length === 0 && (
             <div className="text-center py-24">
               <div className="text-6xl mb-4">🏚️</div>
               <h3 className="text-xl font-semibold text-primary-900 mb-2">No properties found</h3>
               <p className="text-gray-500 mb-6">Try adjusting your filters to see more results</p>
               <button onClick={clearFilters} className="btn-primary">Clear Filters</button>
             </div>
-          ) : (
+          )}
+
+          {/* Properties Grid */}
+          {!loading && properties.length > 0 && (
             <div className={viewMode==='grid'
               ? 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5'
               : 'flex flex-col gap-4'}>
-              {results.map(p => <PropertyCard key={p.id} property={p} />)}
+              {properties.map(p => <PropertyCard key={p.id} property={p} />)}
             </div>
           )}
         </div>
